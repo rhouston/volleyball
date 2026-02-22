@@ -1,0 +1,106 @@
+name: Discord Repo Updates
+
+on:
+  push:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+  workflow_dispatch:
+    inputs:
+      test_message:
+        description: "Optional message for manual Discord test post"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate webhook secret
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_REPO_UPDATES_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "Missing secret: DISCORD_REPO_UPDATES_WEBHOOK_URL"
+            exit 1
+          fi
+
+      - name: Post update to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_REPO_UPDATES_WEBHOOK_URL }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          server = os.environ["GITHUB_SERVER_URL"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          event_path = os.environ["GITHUB_EVENT_PATH"]
+
+          with open(event_path, "r", encoding="utf-8") as f:
+              event = json.load(f)
+
+          repo_obj = event.get("repository") or {}
+          repo_name = repo_obj.get("name") or (repo.split("/")[-1] if repo else "unknown")
+
+          if event_name == "push":
+              ref = event.get("ref", "")
+              branch = ref.split("/")[-1] if ref else "unknown"
+              pusher = (event.get("pusher") or {}).get("name", "unknown")
+              head = event.get("head_commit") or {}
+              head_msg = (head.get("message") or "").splitlines()[0]
+              head_full = head.get("id", "")
+              short_id = head_full[:7] if head_full else "unknown"
+              compare_url = event.get("compare", f"{server}/{repo}/commits")
+              lines = [
+                  f"🏐 Commit: [{repo_name}] {pusher} - {branch} - {short_id} - {head_msg}",
+                  f"<{compare_url}>",
+              ]
+          elif event_name == "pull_request":
+              action = event.get("action", "updated")
+              pr = event.get("pull_request") or {}
+              number = pr.get("number")
+              title = pr.get("title", "(no title)")
+              url = pr.get("html_url", "")
+              user = (pr.get("user") or {}).get("login", "unknown")
+              merged = pr.get("merged", False)
+              state = "merged" if merged else action
+
+              one_line = f"PR #{number} {state} | {user} | {title}"
+              if url:
+                  one_line += f" | <{url}>"
+              lines = [one_line]
+          elif event_name == "workflow_dispatch":
+              manual_msg = (event.get("inputs") or {}).get("test_message", "").strip()
+              if manual_msg:
+                  lines = [f"manual test | {manual_msg}"]
+              else:
+                  lines = ["manual test | GitHub Actions workflow_dispatch trigger"]
+          else:
+              lines = [f"event | {event_name} | <{server}/{repo}/actions/runs/{run_id}>"]
+
+          payload = {"content": "\n".join(lines)}
+          with open("discord_payload.json", "w", encoding="utf-8") as f:
+              json.dump(payload, f)
+          PY
+
+          HTTP_CODE="$(curl -sS -o discord_response.txt -w "%{http_code}" \
+            -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: Mozilla/5.0 (GitHubActions; DiscordRepoUpdates/1.0)" \
+            --data @discord_payload.json)"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Discord webhook HTTP $HTTP_CODE"
+            cat discord_response.txt || true
+            exit 1
+          fi

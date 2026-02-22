@@ -1,0 +1,36 @@
+{
+  "name": "@volleyball/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "16.1.6",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@testing-library/jest-dom": "6.9.1",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.4",
+    "@types/react-dom": "19.2.2",
+    "@vitest/coverage-v8": "4.0.7",
+    "eslint": "9.39.0",
+    "eslint-config-next": "16.1.6",
+    "jsdom": "27.2.0",
+    "typescript": "5.9.3",
+    "vitest": "4.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

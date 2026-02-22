@@ -1,6 +1,10 @@
 
-Please build from me a detailed specification for a volleyball season management web application that has the following functionality:
- 1. Ability to create teams and add members
+Please build a detailed specification for a volleyball season management web application. This web application will be built on Next.js using Vercel Hobby. For front-end make sure to use the design skill.
+
+ V1 features:
+ 1. Ability to create/register teams and add members
+   - will need authentication via something like google / apple accounts to we can identify who created a team etc
+   - individual players should be able to sign in and register / confirm they are part of a team
  2. Ability to create a fixture draw for multiple grades: Mixed A,B,C - Ladies - Mens
     - There are 3 courts available
     - There are 3 time slots
@@ -38,6 +42,59 @@ Please build from me a detailed specification for a volleyball season management
  11. Integration with a calendar system to allow teams to easily add game schedules and duties to their personal calendars
  12. A communication system for teams to communicate with each other and with administrators regarding game schedules, duties, and other important information
  13. Generate a finals schedule with the top 4 teams in each grade at the end of the season, with a knockout format leading to a grand final; where 1 plays 4 and 2 plays 3 in the semi-finals, and the winners of those games play in the grand final. The finals schedule should also include duties for the teams involved in the finals.
+ 14. Use a relational schema from day one: `seasons`, `grades`, `teams`, `players`, `matches`, `sets`, `events` and more as required.
+
+Please suggest any additional features that will add value to this web app as well.
+
+The references/ folder has two excel files that were previously used to manage seasons, examine them to identify any logic that may assign with feature design.
 
 
+## Delivery Baseline Decision (2026-02-22)
+- Frontend framework: Next.js.
+- Hosting target: Vercel Hobby (non-commercial community use).
+- Quality gates are mandatory for feature completion: lint + typecheck + unit coverage + E2E.
 
+## Definition of Done (Next.js + Vercel Hobby)
+A feature is only complete when all of the following are true:
+1. Behavior is implemented and documented in the relevant spec/update notes.
+2. `./scripts/dev/frontend_gate.sh` passes.
+3. `./scripts/dev/e2e_gate.sh` passes.
+4. `./scripts/dev/done_gate.sh` passes end-to-end.
+5. Coverage is at or above thresholds defined in `scripts/dev/coverage_thresholds.json`.
+6. Any uncovered risk is explicitly documented with mitigation or a follow-up task.
+
+## Required package scripts (web app)
+The Next.js web app `package.json` must define at least these scripts:
+- `lint`
+- `typecheck`
+- `test:coverage` (must emit `coverage/coverage-summary.json`)
+- `test:e2e` (Playwright)
+
+## Gate scripts
+- `scripts/dev/frontend_gate.sh`
+  - runs lint, typecheck, unit tests with coverage,
+  - enforces coverage thresholds via `scripts/dev/check_coverage_thresholds.mjs`.
+- `scripts/dev/e2e_gate.sh`
+  - runs Playwright E2E suite via `npm run test:e2e`.
+- `scripts/dev/done_gate.sh`
+  - orchestrates `frontend_gate` then `e2e_gate`.
+
+## Coverage policy
+- Global minimums:
+  - Lines: 80%
+  - Statements: 80%
+  - Functions: 80%
+  - Branches: 70%
+- Critical modules (scheduling, standings, API paths) are held to stricter thresholds in `scripts/dev/coverage_thresholds.json`.
+- If coverage artifacts are missing, the gate fails with a blocked status and exact missing path.
+
+## E2E baseline scenarios (must exist before first production release)
+1. User sign-in and team registration flow.
+2. Admin creates a round and publishes fixtures.
+3. Team view shows upcoming fixture, duty assignment, and standings snapshot.
+4. Umpire submits best-and-fairest votes and values persist to leaderboard/profile views.
+5. Mobile viewport smoke test for fixture + duty pages.
+
+## CI / local parity
+- Local command for completion: `./scripts/dev/done_gate.sh`.
+- CI should run the same command to avoid local-vs-CI drift.
