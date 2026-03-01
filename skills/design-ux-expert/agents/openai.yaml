@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design UX Expert"
+  short_description: "Drive frontend UX design and review workflows"
+  default_prompt: "Review and design frontend UX using project rules and accessibility standards."

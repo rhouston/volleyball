@@ -1,0 +1,512 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SeasonStatus {
+  DRAFT
+  PUBLISHED
+  LOCKED
+  COMPLETED
+}
+
+enum GradeCategory {
+  MIXED
+  LADIES
+  MENS
+}
+
+enum MatchStatus {
+  SCHEDULED
+  COMPLETED
+  FORFEIT
+  NO_GAME
+  CANCELLED
+}
+
+enum MatchOutcome {
+  WIN
+  DRAW
+  LOSS
+  FORFEIT
+  BYE
+}
+
+enum DutyType {
+  SETUP
+  UMPIRE
+  SCOREKEEP
+  PACKUP
+}
+
+enum MembershipRole {
+  TEAM_MANAGER
+  PLAYER
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  INACTIVE
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+  READ
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  seasons     Season[]
+  venues      Venue[]
+}
+
+model User {
+  id            String   @id @default(uuid())
+  organizationId String
+  email         String   @unique
+  displayName   String
+  isPlatformAdmin Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  identities    UserIdentity[]
+  memberships   TeamMembership[]
+  notifications Notification[] @relation("NotificationRecipient")
+  messages      Message[]
+  auditEvents   AuditLog[]
+
+  @@index([organizationId])
+}
+
+model UserIdentity {
+  id             String   @id @default(uuid())
+  userId          String
+  provider        String
+  providerUserId  String
+  createdAt       DateTime @default(now())
+
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+model Season {
+  id              String      @id @default(uuid())
+  organizationId  String
+  name            String
+  year            Int
+  startDate       DateTime
+  endDate         DateTime
+  mixedNight      Int
+  ladiesMensNight Int
+  status          SeasonStatus @default(DRAFT)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  settings        SeasonSettings?
+  grades          Grade[]
+  seasonDates     SeasonDate[]
+  teams           Team[]
+  matches         Match[]
+  duties          Duty[]
+  ladderSnapshots LadderSnapshot[]
+  generationRuns  FixtureGenerationRun[]
+  gradingMatches  GradingMatch[]
+
+  @@index([organizationId])
+  @@unique([organizationId, year, name])
+}
+
+model SeasonSettings {
+  id                String  @id @default(uuid())
+  seasonId           String  @unique
+  pointsWin          Int     @default(3)
+  pointsDraw         Int     @default(2)
+  pointsLoss         Int     @default(1)
+  pointsForfeit      Int     @default(0)
+  pointsBye          Int     @default(3)
+  penaltyMissedDuty  Int     @default(-2)
+  tieBreakOrder      String  @default("points,percentage,for,head_to_head,admin_decision")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  season             Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+}
+
+model Grade {
+  id              String   @id @default(uuid())
+  seasonId        String
+  name            String
+  category        GradeCategory
+  rankOrder       Int
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  season          Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  teams           Team[]
+  matches         Match[]
+  ladderSnapshots LadderSnapshot[]
+  gradingMatches  GradingMatch[]
+
+  @@index([seasonId])
+  @@unique([seasonId, name])
+}
+
+model Team {
+  id            String   @id @default(uuid())
+  seasonId      String
+  gradeId       String
+  name          String
+  shortCode     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  season        Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  grade         Grade  @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  memberships   TeamMembership[]
+  homeMatches   Match[] @relation("HomeTeam")
+  awayMatches   Match[] @relation("AwayTeam")
+  duties        DutyAssignment[]
+  votesReceived VoteBestFairest[] @relation("VoteTeam")
+
+  @@index([seasonId])
+  @@index([gradeId])
+  @@unique([seasonId, gradeId, name])
+}
+
+model Player {
+  id            String   @id @default(uuid())
+  displayName   String
+  email         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  memberships   TeamMembership[]
+  votes         VoteBestFairest[] @relation("VotePlayer")
+}
+
+model TeamMembership {
+  id            String   @id @default(uuid())
+  teamId         String
+  userId         String?
+  playerId       String
+  role           MembershipRole
+  status         MembershipStatus @default(PENDING)
+  invitedByUserId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  team           Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user           User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  player         Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@index([userId])
+  @@index([playerId])
+  @@unique([teamId, playerId])
+}
+
+model Venue {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  address        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  courts         Court[]
+
+  @@index([organizationId])
+}
+
+model Court {
+  id             String   @id @default(uuid())
+  venueId         String
+  name           String
+  sortOrder      Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  venue          Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  matches        Match[]
+
+  @@index([venueId])
+  @@unique([venueId, name])
+}
+
+model Timeslot {
+  id            String   @id @default(uuid())
+  seasonId       String
+  label          String
+  startsAt       String
+  sortOrder      Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  season         Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  matches        Match[]
+
+  @@index([seasonId])
+  @@unique([seasonId, sortOrder])
+}
+
+model SeasonDate {
+  id            String   @id @default(uuid())
+  seasonId       String
+  matchDate      DateTime
+  isExcluded     Boolean @default(false)
+  exclusionReason String?
+  createdAt      DateTime @default(now())
+
+  season         Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId, matchDate])
+  @@unique([seasonId, matchDate])
+}
+
+model Match {
+  id             String    @id @default(uuid())
+  seasonId        String
+  gradeId         String
+  homeTeamId      String
+  awayTeamId      String
+  courtId         String
+  timeslotId      String
+  matchDate       DateTime
+  roundNumber     Int
+  stageLabel      String   @default("REGULAR")
+  status          MatchStatus @default(SCHEDULED)
+  homeScore       Int?
+  awayScore       Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  season          Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  grade           Grade @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  homeTeam        Team @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  awayTeam        Team @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  court           Court @relation(fields: [courtId], references: [id], onDelete: Restrict)
+  timeslot        Timeslot @relation(fields: [timeslotId], references: [id], onDelete: Restrict)
+  events          MatchEvent[]
+  duties          Duty[]
+  votes           VoteBestFairest[]
+
+  @@index([seasonId, gradeId])
+  @@index([matchDate, timeslotId, courtId])
+}
+
+model MatchEvent {
+  id             String   @id @default(uuid())
+  matchId         String
+  eventType       String
+  payload         Json?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  match           Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  createdByUser   User? @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([matchId])
+}
+
+model Duty {
+  id             String   @id @default(uuid())
+  seasonId        String
+  gradeId         String
+  matchId         String?
+  dutyDate        DateTime
+  dutyType        DutyType
+  courtId         String?
+  timeslotId      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  season          Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  grade           Grade @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  match           Match? @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  assignments     DutyAssignment[]
+
+  @@index([seasonId, gradeId, dutyDate])
+}
+
+model DutyAssignment {
+  id             String   @id @default(uuid())
+  dutyId          String
+  teamId          String
+  assignedAt      DateTime @default(now())
+
+  duty            Duty @relation(fields: [dutyId], references: [id], onDelete: Cascade)
+  team            Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@unique([dutyId, teamId])
+}
+
+model VoteBestFairest {
+  id               String   @id @default(uuid())
+  matchId           String
+  votingUserId      String
+  selectedPlayerId  String
+  selectedTeamId    String
+  createdAt         DateTime @default(now())
+
+  match             Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  votingUser        User @relation(fields: [votingUserId], references: [id], onDelete: Restrict)
+  selectedPlayer    Player @relation("VotePlayer", fields: [selectedPlayerId], references: [id], onDelete: Restrict)
+  selectedTeam      Team @relation("VoteTeam", fields: [selectedTeamId], references: [id], onDelete: Restrict)
+
+  @@index([matchId])
+  @@index([selectedPlayerId])
+  @@unique([matchId, votingUserId, selectedTeamId])
+}
+
+model LadderSnapshot {
+  id              String   @id @default(uuid())
+  seasonId         String
+  gradeId          String
+  teamId           String
+  roundNumber      Int
+  played           Int
+  won              Int
+  drawn            Int
+  lost             Int
+  forfeits         Int
+  byes             Int
+  pointsFor        Int
+  pointsAgainst    Int
+  deductions       Int
+  ladderPoints     Int
+  percentage       Decimal @db.Decimal(7, 3)
+  position         Int
+  createdAt        DateTime @default(now())
+
+  season           Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  grade            Grade @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  team             Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId, gradeId, roundNumber])
+  @@unique([seasonId, gradeId, teamId, roundNumber])
+}
+
+model FixtureGenerationRun {
+  id               String   @id @default(uuid())
+  seasonId          String
+  runType           String
+  inputSnapshot     Json
+  fairnessReport    Json?
+  conflictReport    Json?
+  createdByUserId   String?
+  createdAt         DateTime @default(now())
+
+  season            Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  createdByUser     User? @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([seasonId, createdAt])
+}
+
+model GradingMatch {
+  id               String   @id @default(uuid())
+  seasonId          String
+  gradeId           String
+  teamId            String
+  referenceTeamName String
+  matchDate         DateTime
+  scoreFor          Int?
+  scoreAgainst      Int?
+  recommendation    String?
+  createdAt         DateTime @default(now())
+
+  season            Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  grade             Grade @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  team              Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId, gradeId])
+}
+
+model Notification {
+  id               String   @id @default(uuid())
+  recipientUserId   String
+  channel           NotificationChannel
+  templateKey       String
+  payload           Json
+  status            NotificationStatus @default(QUEUED)
+  scheduledFor      DateTime?
+  sentAt            DateTime?
+  readAt            DateTime?
+  createdAt         DateTime @default(now())
+
+  recipientUser     User @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, status])
+}
+
+model MessageThread {
+  id               String   @id @default(uuid())
+  seasonId          String
+  gradeId           String?
+  teamId            String?
+  title             String
+  createdByUserId   String
+  createdAt         DateTime @default(now())
+
+  season            Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  grade             Grade? @relation(fields: [gradeId], references: [id], onDelete: SetNull)
+  team              Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdByUser     User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  messages          Message[]
+
+  @@index([seasonId])
+}
+
+model Message {
+  id               String   @id @default(uuid())
+  threadId          String
+  authorUserId      String
+  body              String
+  createdAt         DateTime @default(now())
+
+  thread            MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorUser        User @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+}
+
+model AuditLog {
+  id               String   @id @default(uuid())
+  userId            String?
+  action            String
+  entityType        String
+  entityId          String
+  payload           Json?
+  createdAt         DateTime @default(now())
+
+  user              User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
