@@ -14,6 +14,7 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   PG_BOSS_DATABASE_URL: z.string().optional(),
   CRON_SECRET: z.string().optional(),
+  SERVICE_BACKEND: z.enum(['auto', 'memory', 'prisma']).optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

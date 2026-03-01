@@ -56,3 +56,8 @@ export type CreateThreadRequest = {
 export type CreateMessageRequest = {
   body: string;
 };
+
+export type CreateNotificationRequest = {
+  recipientUserId: string;
+  message: string;
+};

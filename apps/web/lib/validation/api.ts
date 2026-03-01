@@ -58,3 +58,8 @@ export const createThreadSchema = z.object({
 export const createMessageSchema = z.object({
   body: z.string().min(1).max(3000),
 });
+
+export const createNotificationSchema = z.object({
+  recipientUserId: z.string().min(1),
+  message: z.string().min(2).max(500),
+});

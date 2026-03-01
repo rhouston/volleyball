@@ -19,6 +19,7 @@ import { POST as matchesResult } from './matches/[matchId]/result/route';
 import { POST as matchesVotes } from './matches/[matchId]/votes/route';
 import { GET as matchesCalendar } from './matches/[matchId]/calendar.ics/route';
 import { GET as notificationsGet } from './notifications/route';
+import { POST as notificationsCreate } from './notifications/route';
 import { POST as messagesThreadsCreate } from './messages/threads/route';
 import { POST as messagesThreadMessagesCreate } from './messages/threads/[threadId]/messages/route';
 import { POST as importDryRun } from './import/dry-run/route';
@@ -188,6 +189,15 @@ describe('api v1 route contracts', () => {
 
     const notificationsBadRequest = await notificationsGet(new Request('http://127.0.0.1:3000/api/v1/notifications'));
     expect(notificationsBadRequest.status).toBe(400);
+
+    const notificationsCreateForbidden = await notificationsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/notifications', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ recipientUserId: 'user-9', message: 'Schedule changed' }),
+      }),
+    );
+    expect(notificationsCreateForbidden.status).toBe(403);
 
     const threadForbidden = await messagesThreadsCreate(
       new Request('http://127.0.0.1:3000/api/v1/messages/threads', {

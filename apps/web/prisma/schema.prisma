@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -154,6 +155,8 @@ model SeasonSettings {
   pointsBye          Int     @default(3)
   penaltyMissedDuty  Int     @default(-2)
   tieBreakOrder      String  @default("points,percentage,for,head_to_head,admin_decision")
+  finalsFormat       String  @default("simple_top4")
+  excludedDatesJson  Json    @default("[]")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

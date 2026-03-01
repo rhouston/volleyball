@@ -21,6 +21,7 @@ import { POST as messageCreate } from './messages/threads/[threadId]/messages/ro
 import { GET as teamCalendar } from './teams/[teamId]/calendar.ics/route';
 import { GET as matchCalendar } from './matches/[matchId]/calendar.ics/route';
 import { GET as notificationsGet } from './notifications/route';
+import { POST as notificationsCreate } from './notifications/route';
 import { POST as importDryRun } from './import/dry-run/route';
 import { POST as importCommit } from './import/commit/route';
 import { services } from '@/lib/services/service_registry';
@@ -266,6 +267,18 @@ describe('api v1 integration flow', () => {
       }),
     );
     expect(notificationsResponse.status).toBe(200);
+
+    const notificationsCreateResponse = await notificationsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/notifications', {
+        method: 'POST',
+        headers: jsonHeaders('grade_admin', 'grade-admin-1'),
+        body: JSON.stringify({
+          recipientUserId: 'player-22',
+          message: 'Fixture update available',
+        }),
+      }),
+    );
+    expect(notificationsCreateResponse.status).toBe(200);
 
     const dryRunResponse = await importDryRun(
       new Request('http://127.0.0.1:3000/api/v1/import/dry-run', {

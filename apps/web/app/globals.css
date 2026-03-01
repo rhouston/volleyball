@@ -1,5 +1,18 @@
 :root {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --font-heading: 'Space Grotesk', sans-serif;
+  --font-body: 'Source Sans 3', sans-serif;
+  --surface-bg: #f6f8fa;
+  --surface-card: #ffffff;
+  --surface-elevated: #edf3f8;
+  --text-primary: #18222c;
+  --text-muted: #495a68;
+  --accent-primary: #0f6b86;
+  --accent-primary-strong: #0a5268;
+  --accent-soft: #d8eef6;
+  --danger-soft: #ffe9e9;
+  --danger-text: #8e1f24;
+  --border-soft: #cfdee9;
+  --shadow-soft: 0 16px 35px -26px rgba(20, 45, 60, 0.45);
 }
 
 * {
@@ -9,22 +22,77 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f7fafc 0%, #edf2f7 100%);
-  color: #1a202c;
+  font-family: var(--font-body);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(15, 107, 134, 0.18) 0%, rgba(15, 107, 134, 0) 37%),
+    linear-gradient(180deg, #fbfdff 0%, #eef4f8 100%);
+  color: var(--text-primary);
 }
 
 main {
   max-width: 64rem;
   margin: 0 auto;
-  padding: 4rem 1.5rem;
+  padding: 3.5rem 1.25rem;
 }
 
 h1 {
   margin: 0 0 0.75rem;
+  font-family: var(--font-heading);
   font-size: 2rem;
+  letter-spacing: -0.02em;
 }
 
 p {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+h2,
+h3 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.01em;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 0.65rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid transparent;
+  text-decoration: none;
+  font-weight: 700;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.button-link.primary {
+  background: var(--accent-primary);
+  color: #ffffff;
+}
+
+.button-link.primary:hover {
+  background: var(--accent-primary-strong);
+}
+
+.button-link.secondary {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  border-color: var(--border-soft);
+}
+
+.button-link.secondary:hover {
+  background: var(--surface-elevated);
 }

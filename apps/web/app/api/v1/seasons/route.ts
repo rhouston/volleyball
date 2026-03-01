@@ -16,6 +16,7 @@ export async function POST(request: Request) {
   try {
     const payload = createSeasonSchema.parse(await request.json());
     const season = await services.seasonService.createSeason(payload);
+    const grades = await services.seasonService.getGrades(season.id);
 
     await logAction({
       actor,
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       payload,
     });
 
-    return created({ season });
+    return created({ season, grades });
   } catch {
     return badRequest('Invalid season payload');
   }
