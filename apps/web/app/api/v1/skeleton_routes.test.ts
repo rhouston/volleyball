@@ -21,171 +21,289 @@ import { GET as matchesCalendar } from './matches/[matchId]/calendar.ics/route';
 import { GET as notificationsGet } from './notifications/route';
 import { POST as messagesThreadsCreate } from './messages/threads/route';
 import { POST as messagesThreadMessagesCreate } from './messages/threads/[threadId]/messages/route';
+import { POST as importDryRun } from './import/dry-run/route';
+import { POST as importCommit } from './import/commit/route';
+import { services } from '@/lib/services/service_registry';
 
-type JsonCase = {
-  routeName: string;
-  response: Response;
-  method: string;
-  endpoint: string;
-};
-
-async function assertJsonCase(testCase: JsonCase) {
-  const body = await testCase.response.json();
-
-  expect(testCase.response.status).toBe(501);
-  expect(body.status).toBe('not_implemented');
-  expect(body.method).toBe(testCase.method);
-  expect(body.endpoint).toBe(testCase.endpoint);
+function asContext(params: Record<string, string>) {
+  return { params };
 }
 
-describe('api v1 skeleton routes', () => {
-  it('returns 501 JSON payloads for business endpoints', async () => {
-    const cases: JsonCase[] = [
-      {
-        routeName: 'auth/signin',
-        response: authSignIn(),
-        method: 'POST',
-        endpoint: '/api/v1/auth/signin',
-      },
-      {
-        routeName: 'auth/signout',
-        response: authSignOut(),
-        method: 'POST',
-        endpoint: '/api/v1/auth/signout',
-      },
-      {
-        routeName: 'users/me',
-        response: usersMe(),
-        method: 'GET',
-        endpoint: '/api/v1/users/me',
-      },
-      {
-        routeName: 'teams',
-        response: teamsCreate(),
-        method: 'POST',
-        endpoint: '/api/v1/teams',
-      },
-      {
-        routeName: 'teams/:teamId',
-        response: teamsGet(),
-        method: 'GET',
-        endpoint: '/api/v1/teams/:teamId',
-      },
-      {
-        routeName: 'teams/:teamId/invites',
-        response: teamsInvites(),
-        method: 'POST',
-        endpoint: '/api/v1/teams/:teamId/invites',
-      },
-      {
-        routeName: 'teams/:teamId/memberships/:membershipId/confirm',
-        response: teamsMembershipConfirm(),
-        method: 'POST',
-        endpoint: '/api/v1/teams/:teamId/memberships/:membershipId/confirm',
-      },
-      {
-        routeName: 'seasons',
-        response: seasonsCreate(),
-        method: 'POST',
-        endpoint: '/api/v1/seasons',
-      },
-      {
-        routeName: 'seasons/:seasonId/settings',
-        response: seasonsSettings(),
-        method: 'PATCH',
-        endpoint: '/api/v1/seasons/:seasonId/settings',
-      },
-      {
-        routeName: 'seasons/:seasonId/publish',
-        response: seasonsPublish(),
-        method: 'POST',
-        endpoint: '/api/v1/seasons/:seasonId/publish',
-      },
-      {
-        routeName: 'seasons/:seasonId/generate-fixtures',
-        response: seasonsGenerateFixtures(),
-        method: 'POST',
-        endpoint: '/api/v1/seasons/:seasonId/generate-fixtures',
-      },
-      {
-        routeName: 'seasons/:seasonId/generate-duties',
-        response: seasonsGenerateDuties(),
-        method: 'POST',
-        endpoint: '/api/v1/seasons/:seasonId/generate-duties',
-      },
-      {
-        routeName: 'seasons/:seasonId/ladders',
-        response: seasonsLadders(),
-        method: 'GET',
-        endpoint: '/api/v1/seasons/:seasonId/ladders',
-      },
-      {
-        routeName: 'seasons/:seasonId/finals/generate',
-        response: seasonsFinalsGenerate(),
-        method: 'POST',
-        endpoint: '/api/v1/seasons/:seasonId/finals/generate',
-      },
-      {
-        routeName: 'matches/:matchId/result',
-        response: matchesResult(),
-        method: 'POST',
-        endpoint: '/api/v1/matches/:matchId/result',
-      },
-      {
-        routeName: 'matches/:matchId/votes',
-        response: matchesVotes(),
-        method: 'POST',
-        endpoint: '/api/v1/matches/:matchId/votes',
-      },
-      {
-        routeName: 'notifications',
-        response: notificationsGet(),
-        method: 'GET',
-        endpoint: '/api/v1/notifications',
-      },
-      {
-        routeName: 'messages/threads',
-        response: messagesThreadsCreate(),
-        method: 'POST',
-        endpoint: '/api/v1/messages/threads',
-      },
-      {
-        routeName: 'messages/threads/:threadId/messages',
-        response: messagesThreadMessagesCreate(),
-        method: 'POST',
-        endpoint: '/api/v1/messages/threads/:threadId/messages',
-      },
-    ];
+function headers(role: string, userId = 'user-1') {
+  return {
+    'content-type': 'application/json',
+    'x-user-id': userId,
+    'x-user-email': `${userId}@local.test`,
+    'x-user-role': role,
+  };
+}
 
-    for (const testCase of cases) {
-      await assertJsonCase(testCase);
-    }
-  });
-
-  it('captures query params for fixture list endpoint', async () => {
-    const response = seasonsFixtures(
-      new Request('http://127.0.0.1:3000/api/v1/seasons/season-1/fixtures?gradeId=grade-1&round=4'),
+describe('api v1 route contracts', () => {
+  it('returns expected codes for invalid and unauthorized requests', async () => {
+    const invalidSignIn = await authSignIn(
+      new Request('http://127.0.0.1:3000/api/v1/auth/signin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'invalid' }),
+      }),
     );
-    const body = await response.json();
+    expect(invalidSignIn.status).toBe(400);
 
-    expect(response.status).toBe(501);
-    expect(body.endpoint).toBe('/api/v1/seasons/:seasonId/fixtures');
-    expect(body.notes).toEqual({ gradeId: 'grade-1', round: '4' });
+    const signOut = await authSignOut();
+    expect(signOut.status).toBe(200);
+
+    const me = await usersMe(new Request('http://127.0.0.1:3000/api/v1/users/me'));
+    expect(me.status).toBe(200);
+    expect((await me.json()).authenticated).toBe(false);
+
+    const createTeamForbidden = await teamsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/teams', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seasonId: 'season-x', gradeId: 'grade-x', name: 'Unauthorized Team' }),
+      }),
+    );
+    expect(createTeamForbidden.status).toBe(403);
+
+    const teamNotFound = await teamsGet(
+      new Request('http://127.0.0.1:3000/api/v1/teams/team-missing'),
+      asContext({ teamId: 'team-missing' }),
+    );
+    expect(teamNotFound.status).toBe(404);
+
+    const inviteForbidden = await teamsInvites(
+      new Request('http://127.0.0.1:3000/api/v1/teams/team-missing/invites', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ inviteeEmail: 'player@example.com' }),
+      }),
+      asContext({ teamId: 'team-missing' }),
+    );
+    expect(inviteForbidden.status).toBe(403);
+
+    const confirmForbidden = await teamsMembershipConfirm(
+      new Request('http://127.0.0.1:3000/api/v1/teams/team-missing/memberships/membership-missing/confirm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'ACTIVE' }),
+      }),
+      asContext({ teamId: 'team-missing', membershipId: 'membership-missing' }),
+    );
+    expect(confirmForbidden.status).toBe(403);
+
+    const teamCalendarNotFound = await teamsCalendar(
+      new Request('http://127.0.0.1:3000/api/v1/teams/team-missing/calendar.ics'),
+      asContext({ teamId: 'team-missing' }),
+    );
+    expect(teamCalendarNotFound.status).toBe(404);
+
+    const seasonCreateForbidden = await seasonsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/seasons', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId: 'org-1',
+          name: 'Unauthorized Season',
+          year: 2026,
+          startDate: '2026-04-01',
+          endDate: '2026-06-30',
+          mixedNight: 3,
+          ladiesMensNight: 5,
+        }),
+      }),
+    );
+    expect(seasonCreateForbidden.status).toBe(403);
+
+    const seasonSettingsForbidden = await seasonsSettings(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/settings', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ finalsFormat: 'simple_top4' }),
+      }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(seasonSettingsForbidden.status).toBe(403);
+
+    const seasonPublishForbidden = await seasonsPublish(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/publish', { method: 'POST' }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(seasonPublishForbidden.status).toBe(403);
+
+    const fixtureGenerateForbidden = await seasonsGenerateFixtures(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/generate-fixtures', { method: 'POST' }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(fixtureGenerateForbidden.status).toBe(403);
+
+    const fixturesBadRequest = await seasonsFixtures(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/fixtures?round=oops'),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(fixturesBadRequest.status).toBe(400);
+
+    const dutyGenerateForbidden = await seasonsGenerateDuties(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/generate-duties', { method: 'POST' }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(dutyGenerateForbidden.status).toBe(403);
+
+    const ladders = await seasonsLadders(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/ladders'),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(ladders.status).toBe(200);
+
+    const finalsForbidden = await seasonsFinalsGenerate(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/finals/generate', { method: 'POST' }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(finalsForbidden.status).toBe(403);
+
+    const resultForbidden = await matchesResult(
+      new Request('http://127.0.0.1:3000/api/v1/matches/match-missing/result', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ homeScore: 3, awayScore: 2 }),
+      }),
+      asContext({ matchId: 'match-missing' }),
+    );
+    expect(resultForbidden.status).toBe(403);
+
+    const voteForbidden = await matchesVotes(
+      new Request('http://127.0.0.1:3000/api/v1/matches/match-missing/votes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ selectedTeamId: 'team-x', selectedPlayerName: 'Player X' }),
+      }),
+      asContext({ matchId: 'match-missing' }),
+    );
+    expect(voteForbidden.status).toBe(403);
+
+    const matchCalendarNotFound = await matchesCalendar(
+      new Request('http://127.0.0.1:3000/api/v1/matches/match-missing/calendar.ics'),
+      asContext({ matchId: 'match-missing' }),
+    );
+    expect(matchCalendarNotFound.status).toBe(404);
+
+    const notificationsBadRequest = await notificationsGet(new Request('http://127.0.0.1:3000/api/v1/notifications'));
+    expect(notificationsBadRequest.status).toBe(400);
+
+    const threadForbidden = await messagesThreadsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/messages/threads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seasonId: 'season-x', title: 'No Access' }),
+      }),
+    );
+    expect(threadForbidden.status).toBe(403);
+
+    const threadMessageForbidden = await messagesThreadMessagesCreate(
+      new Request('http://127.0.0.1:3000/api/v1/messages/threads/thread-missing/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ body: 'No Access' }),
+      }),
+      asContext({ threadId: 'thread-missing' }),
+    );
+    expect(threadMessageForbidden.status).toBe(403);
+
+    const dryRunForbidden = await importDryRun(
+      new Request('http://127.0.0.1:3000/api/v1/import/dry-run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'teams', rows: [] }),
+      }),
+    );
+    expect(dryRunForbidden.status).toBe(403);
+
+    const commitForbidden = await importCommit(
+      new Request('http://127.0.0.1:3000/api/v1/import/commit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'teams', rows: [] }),
+      }),
+    );
+    expect(commitForbidden.status).toBe(403);
   });
 
-  it('returns calendar placeholders for ICS endpoints', async () => {
-    const teamCalendarResponse = teamsCalendar();
-    const matchCalendarResponse = matchesCalendar();
+  it('returns ICS payloads for existing team and match', async () => {
+    const seasonResponse = await seasonsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/seasons', {
+        method: 'POST',
+        headers: headers('platform_admin', 'admin-ics'),
+        body: JSON.stringify({
+          organizationId: 'org-1',
+          name: 'ICS Season',
+          year: 2026,
+          startDate: '2026-07-01',
+          endDate: '2026-09-30',
+          mixedNight: 3,
+          ladiesMensNight: 5,
+        }),
+      }),
+    );
+    expect(seasonResponse.status).toBe(201);
 
-    const teamCalendar = await teamCalendarResponse.text();
-    const matchCalendar = await matchCalendarResponse.text();
+    const seasonId = ((await seasonResponse.json()) as { season: { id: string } }).season.id;
+    const grades = await services.seasonService.getGrades(seasonId);
+    const gradeId = grades[0]?.id;
+    expect(gradeId).toBeTruthy();
 
-    expect(teamCalendarResponse.status).toBe(501);
-    expect(teamCalendarResponse.headers.get('content-type')).toContain('text/calendar');
-    expect(teamCalendar).toContain('/api/v1/teams/:teamId/calendar.ics');
+    const teamOneResponse = await teamsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/teams', {
+        method: 'POST',
+        headers: headers('team_manager', 'manager-ics-1'),
+        body: JSON.stringify({ seasonId, gradeId, name: 'ICS Team One' }),
+      }),
+    );
+    expect(teamOneResponse.status).toBe(201);
+    const teamOneId = ((await teamOneResponse.json()) as { team: { id: string } }).team.id;
 
-    expect(matchCalendarResponse.status).toBe(501);
-    expect(matchCalendarResponse.headers.get('content-type')).toContain('text/calendar');
-    expect(matchCalendar).toContain('/api/v1/matches/:matchId/calendar.ics');
+    const teamTwoResponse = await teamsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/teams', {
+        method: 'POST',
+        headers: headers('team_manager', 'manager-ics-2'),
+        body: JSON.stringify({ seasonId, gradeId, name: 'ICS Team Two' }),
+      }),
+    );
+    expect(teamTwoResponse.status).toBe(201);
+
+    const fixturesResponse = await seasonsGenerateFixtures(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/generate-fixtures`, {
+        method: 'POST',
+        headers: headers('grade_admin', 'grade-admin-ics'),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(fixturesResponse.status).toBe(200);
+
+    const fixtureListResponse = await seasonsFixtures(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/fixtures`),
+      asContext({ seasonId }),
+    );
+    expect(fixtureListResponse.status).toBe(200);
+
+    const fixtures = ((await fixtureListResponse.json()) as { fixtures: Array<{ id: string }> }).fixtures;
+    expect(fixtures.length).toBeGreaterThan(0);
+    const matchId = fixtures[0].id;
+
+    const teamCalendarResponse = await teamsCalendar(
+      new Request(`http://127.0.0.1:3000/api/v1/teams/${teamOneId}/calendar.ics`),
+      asContext({ teamId: teamOneId }),
+    );
+    expect(teamCalendarResponse.status).toBe(200);
+    const teamCalendarText = await teamCalendarResponse.text();
+    expect(teamCalendarText).toContain('BEGIN:VCALENDAR');
+    expect(teamCalendarText).toContain('UID:team-');
+
+    const matchCalendarResponse = await matchesCalendar(
+      new Request(`http://127.0.0.1:3000/api/v1/matches/${matchId}/calendar.ics`),
+      asContext({ matchId }),
+    );
+    expect(matchCalendarResponse.status).toBe(200);
+    const matchCalendarText = await matchCalendarResponse.text();
+    expect(matchCalendarText).toContain('BEGIN:VCALENDAR');
+    expect(matchCalendarText).toContain('UID:match-');
   });
 });

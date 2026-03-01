@@ -16,6 +16,14 @@ describe('skeleton response helpers', () => {
     });
   });
 
+  it('defaults notes to an empty object when omitted', async () => {
+    const response = notImplementedJson('GET', '/api/v1/test');
+    const body = await response.json();
+
+    expect(response.status).toBe(501);
+    expect(body.notes).toEqual({});
+  });
+
   it('builds calendar not implemented payloads', async () => {
     const response = notImplementedCalendar('/api/v1/teams/:teamId/calendar.ics');
     const body = await response.text();

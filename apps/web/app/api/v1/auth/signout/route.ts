@@ -1,5 +1,7 @@
-import { notImplementedJson } from '@/lib/api/skeleton_response';
+import { ok } from '@/lib/api/http';
+import { services } from '@/lib/services/service_registry';
 
-export function POST() {
-  return notImplementedJson('POST', '/api/v1/auth/signout');
+export async function POST() {
+  const result = await services.authService.signOut();
+  return ok(result);
 }

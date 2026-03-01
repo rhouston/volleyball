@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum SeasonStatus {
@@ -93,6 +92,10 @@ model User {
   memberships   TeamMembership[]
   notifications Notification[] @relation("NotificationRecipient")
   messages      Message[]
+  threadsCreated MessageThread[]
+  matchEvents   MatchEvent[]
+  votesCast     VoteBestFairest[]
+  fixtureGenerationRuns FixtureGenerationRun[]
   auditEvents   AuditLog[]
 
   @@index([organizationId])
@@ -128,12 +131,14 @@ model Season {
   settings        SeasonSettings?
   grades          Grade[]
   seasonDates     SeasonDate[]
+  timeslots       Timeslot[]
   teams           Team[]
   matches         Match[]
   duties          Duty[]
   ladderSnapshots LadderSnapshot[]
   generationRuns  FixtureGenerationRun[]
   gradingMatches  GradingMatch[]
+  messageThreads  MessageThread[]
 
   @@index([organizationId])
   @@unique([organizationId, year, name])
@@ -168,8 +173,10 @@ model Grade {
   season          Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   teams           Team[]
   matches         Match[]
+  duties          Duty[]
   ladderSnapshots LadderSnapshot[]
   gradingMatches  GradingMatch[]
+  messageThreads  MessageThread[]
 
   @@index([seasonId])
   @@unique([seasonId, name])
@@ -192,6 +199,9 @@ model Team {
   awayMatches   Match[] @relation("AwayTeam")
   duties        DutyAssignment[]
   votesReceived VoteBestFairest[] @relation("VoteTeam")
+  ladderSnapshots LadderSnapshot[]
+  gradingMatches GradingMatch[]
+  messageThreads MessageThread[]
 
   @@index([seasonId])
   @@index([gradeId])

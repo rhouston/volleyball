@@ -9,13 +9,25 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run app/api/v1/integration_flow.test.ts",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:push": "prisma db push --schema prisma/schema.prisma",
+    "db:seed": "node prisma/seed.mjs"
   },
   "dependencies": {
+    "@auth/prisma-adapter": "^2.11.1",
+    "@prisma/client": "^7.4.2",
     "next": "16.1.6",
+    "next-auth": "^4.24.13",
+    "pg-boss": "^12.14.0",
+    "prisma": "^7.4.2",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "resend": "^6.9.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

@@ -1,5 +1,32 @@
-import { notImplementedJson } from '@/lib/api/skeleton_response';
+import { internalError, ok } from '@/lib/api/http';
+import { getRouteParam, type RouteContext } from '@/lib/api/route_params';
+import { requireRole } from '@/lib/auth/rbac';
+import { resolveActor } from '@/lib/auth/session';
+import { services } from '@/lib/services/service_registry';
+import { logAction } from '@/lib/audit/log_action';
 
-export function POST() {
-  return notImplementedJson('POST', '/api/v1/seasons/:seasonId/generate-fixtures');
+export async function POST(request: Request, context: RouteContext) {
+  const actor = resolveActor(request);
+  const forbidden = requireRole(actor, 'grade_admin');
+
+  if (forbidden) {
+    return forbidden;
+  }
+
+  try {
+    const seasonId = await getRouteParam(context, 'seasonId');
+    const fixtures = await services.fixtureService.generateFixtures(seasonId);
+
+    await logAction({
+      actor,
+      action: 'fixtures.generate',
+      entityType: 'season',
+      entityId: seasonId,
+      payload: { fixtureCount: fixtures.length },
+    });
+
+    return ok({ fixtures });
+  } catch {
+    return internalError('Failed to generate fixtures');
+  }
 }
