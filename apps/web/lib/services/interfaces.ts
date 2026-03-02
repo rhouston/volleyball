@@ -1,14 +1,21 @@
 import type {
   ConfirmMembershipRequest,
+  CreateCourtRequest,
+  CreateGradeRequest,
   CreateInviteRequest,
   CreateMessageRequest,
+  CreateTimeslotRequest,
   CreateSeasonRequest,
   CreateTeamRequest,
   CreateThreadRequest,
   SubmitResultRequest,
   SubmitVoteRequest,
+  UpdateCourtRequest,
+  UpdateGradeRequest,
   UpdateSeasonSettingsRequest,
+  UpdateTimeslotRequest,
 } from '@/lib/api/contracts';
+import type { GenerationDiagnosticsResponse } from '@/lib/diagnostics/generation_report';
 
 export type SeasonStatus = 'DRAFT' | 'PUBLISHED' | 'LOCKED' | 'COMPLETED';
 export type GradeCategory = 'MIXED' | 'LADIES' | 'MENS';
@@ -54,6 +61,21 @@ export type TeamRecord = {
   shortCode: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type CourtRecord = {
+  id: string;
+  seasonId: string;
+  name: string;
+  sortOrder: number;
+};
+
+export type TimeslotRecord = {
+  id: string;
+  seasonId: string;
+  label: string;
+  startsAt: string;
+  sortOrder: number;
 };
 
 export type MembershipRecord = {
@@ -147,6 +169,19 @@ export interface TeamService {
   listTeamsByGrade(gradeId: string): Promise<TeamRecord[]>;
 }
 
+export interface InfrastructureService {
+  listGrades(seasonId: string): Promise<GradeRecord[]>;
+  createGrade(seasonId: string, input: CreateGradeRequest): Promise<GradeRecord>;
+  updateGrade(gradeId: string, input: UpdateGradeRequest): Promise<GradeRecord | null>;
+  listCourts(seasonId: string): Promise<CourtRecord[]>;
+  createCourt(seasonId: string, input: CreateCourtRequest): Promise<CourtRecord>;
+  updateCourt(courtId: string, input: UpdateCourtRequest): Promise<CourtRecord | null>;
+  listTimeslots(seasonId: string): Promise<TimeslotRecord[]>;
+  createTimeslot(seasonId: string, input: CreateTimeslotRequest): Promise<TimeslotRecord>;
+  updateTimeslot(timeslotId: string, input: UpdateTimeslotRequest): Promise<TimeslotRecord | null>;
+  getGenerationDiagnostics(seasonId: string): Promise<GenerationDiagnosticsResponse>;
+}
+
 export interface FixtureService {
   generateFixtures(seasonId: string): Promise<MatchRecord[]>;
   listFixtures(seasonId: string, filters?: { gradeId?: string; round?: number }): Promise<MatchRecord[]>;
@@ -204,6 +239,7 @@ export type ServiceRegistry = {
   authService: AuthService;
   seasonService: SeasonService;
   teamService: TeamService;
+  infrastructureService: InfrastructureService;
   fixtureService: FixtureService;
   dutyService: DutyService;
   resultsService: ResultsService;

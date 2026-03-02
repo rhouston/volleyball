@@ -1,17 +1,20 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { buildFinalsBracket } from '@/lib/finals/bracket';
+import { buildGenerationDiagnostics } from '@/lib/diagnostics/generation_report';
 import { generateDutyDraft } from '@/lib/scheduling/duty_engine';
 import { generateFixtureDraft } from '@/lib/scheduling/fixture_engine';
 import { buildStandings, type MatchOutcome, type TeamResult } from '@/lib/standings/calculate_standings';
 import type {
   AuditService,
   AuthService,
+  CourtRecord,
   DutyRecord,
   DutyService,
   FinalsService,
   FixtureService,
   GradeRecord,
+  InfrastructureService,
   ImportService,
   LadderRow,
   LadderService,
@@ -26,20 +29,27 @@ import type {
   ServiceRegistry,
   TeamRecord,
   TeamService,
+  TimeslotRecord,
   ThreadRecord,
   VoteRecord,
   VotingService,
 } from '@/lib/services/interfaces';
 import type {
   ConfirmMembershipRequest,
+  CreateCourtRequest,
+  CreateGradeRequest,
   CreateInviteRequest,
   CreateMessageRequest,
+  CreateTimeslotRequest,
   CreateSeasonRequest,
   CreateTeamRequest,
   CreateThreadRequest,
   SubmitResultRequest,
   SubmitVoteRequest,
+  UpdateCourtRequest,
+  UpdateGradeRequest,
   UpdateSeasonSettingsRequest,
+  UpdateTimeslotRequest,
 } from '@/lib/api/contracts';
 
 function toDayString(date: Date): string {
@@ -157,6 +167,25 @@ function mapTeamRecord(team: {
     shortCode: team.shortCode,
     createdAt: toIso(team.createdAt),
     updatedAt: toIso(team.updatedAt),
+  };
+}
+
+function mapCourtRecord(court: { id: string; name: string; sortOrder: number }, seasonId: string): CourtRecord {
+  return {
+    id: court.id,
+    seasonId,
+    name: court.name,
+    sortOrder: court.sortOrder,
+  };
+}
+
+function mapTimeslotRecord(timeslot: { id: string; seasonId: string; label: string; startsAt: string; sortOrder: number }): TimeslotRecord {
+  return {
+    id: timeslot.id,
+    seasonId: timeslot.seasonId,
+    label: timeslot.label,
+    startsAt: timeslot.startsAt,
+    sortOrder: timeslot.sortOrder,
   };
 }
 
@@ -622,6 +651,256 @@ class PrismaTeamService implements TeamService {
   }
 }
 
+class PrismaInfrastructureService implements InfrastructureService {
+  async listGrades(seasonId: string): Promise<GradeRecord[]> {
+    const grades = await prisma.grade.findMany({
+      where: { seasonId },
+      orderBy: { rankOrder: 'asc' },
+    });
+
+    return grades.map(mapGradeRecord);
+  }
+
+  async createGrade(seasonId: string, input: CreateGradeRequest): Promise<GradeRecord> {
+    const grade = await prisma.grade.create({
+      data: {
+        seasonId,
+        name: input.name,
+        category: input.category,
+        rankOrder: input.rankOrder,
+        isActive: input.isActive ?? true,
+      },
+    });
+
+    return mapGradeRecord(grade);
+  }
+
+  async updateGrade(gradeId: string, input: UpdateGradeRequest): Promise<GradeRecord | null> {
+    try {
+      const grade = await prisma.grade.update({
+        where: { id: gradeId },
+        data: {
+          name: input.name,
+          category: input.category,
+          rankOrder: input.rankOrder,
+          isActive: input.isActive,
+        },
+      });
+
+      return mapGradeRecord(grade);
+    } catch {
+      return null;
+    }
+  }
+
+  async listCourts(seasonId: string): Promise<CourtRecord[]> {
+    const season = await prisma.season.findUnique({
+      where: { id: seasonId },
+      select: { organizationId: true },
+    });
+
+    if (!season) {
+      return [];
+    }
+
+    const courts = await prisma.court.findMany({
+      where: {
+        venue: {
+          organizationId: season.organizationId,
+        },
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, sortOrder: true },
+    });
+
+    return courts.map((court) => mapCourtRecord(court, seasonId));
+  }
+
+  async createCourt(seasonId: string, input: CreateCourtRequest): Promise<CourtRecord> {
+    const season = await prisma.season.findUnique({
+      where: { id: seasonId },
+      select: { organizationId: true },
+    });
+
+    if (!season) {
+      throw new Error('Season not found');
+    }
+
+    const venue =
+      (await prisma.venue.findFirst({
+        where: { organizationId: season.organizationId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      })) ??
+      (await prisma.venue.create({
+        data: {
+          organizationId: season.organizationId,
+          name: 'Main Stadium',
+        },
+        select: { id: true },
+      }));
+
+    const court = await prisma.court.create({
+      data: {
+        venueId: venue.id,
+        name: input.name,
+        sortOrder: input.sortOrder,
+      },
+      select: { id: true, name: true, sortOrder: true },
+    });
+
+    return mapCourtRecord(court, seasonId);
+  }
+
+  async updateCourt(courtId: string, input: UpdateCourtRequest): Promise<CourtRecord | null> {
+    try {
+      const court = await prisma.court.update({
+        where: { id: courtId },
+        data: {
+          name: input.name,
+          sortOrder: input.sortOrder,
+        },
+        include: {
+          venue: {
+            select: {
+              organizationId: true,
+            },
+          },
+        },
+      });
+
+      const season = await prisma.season.findFirst({
+        where: { organizationId: court.venue.organizationId },
+        orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
+        select: { id: true },
+      });
+
+      return mapCourtRecord(
+        {
+          id: court.id,
+          name: court.name,
+          sortOrder: court.sortOrder,
+        },
+        season?.id ?? '',
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  async listTimeslots(seasonId: string): Promise<TimeslotRecord[]> {
+    const timeslots = await prisma.timeslot.findMany({
+      where: { seasonId },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true, seasonId: true, label: true, startsAt: true, sortOrder: true },
+    });
+
+    return timeslots.map(mapTimeslotRecord);
+  }
+
+  async createTimeslot(seasonId: string, input: CreateTimeslotRequest): Promise<TimeslotRecord> {
+    const timeslot = await prisma.timeslot.create({
+      data: {
+        seasonId,
+        label: input.label,
+        startsAt: input.startsAt,
+        sortOrder: input.sortOrder,
+      },
+      select: { id: true, seasonId: true, label: true, startsAt: true, sortOrder: true },
+    });
+
+    return mapTimeslotRecord(timeslot);
+  }
+
+  async updateTimeslot(timeslotId: string, input: UpdateTimeslotRequest): Promise<TimeslotRecord | null> {
+    try {
+      const timeslot = await prisma.timeslot.update({
+        where: { id: timeslotId },
+        data: {
+          label: input.label,
+          startsAt: input.startsAt,
+          sortOrder: input.sortOrder,
+        },
+        select: { id: true, seasonId: true, label: true, startsAt: true, sortOrder: true },
+      });
+
+      return mapTimeslotRecord(timeslot);
+    } catch {
+      return null;
+    }
+  }
+
+  async getGenerationDiagnostics(seasonId: string) {
+    const season = await prisma.season.findUnique({
+      where: { id: seasonId },
+      select: {
+        id: true,
+        mixedNight: true,
+        ladiesMensNight: true,
+      },
+    });
+
+    if (!season) {
+      throw new Error('Season not found');
+    }
+
+    const [grades, teams, matches, duties, timeslots, lastRun] = await Promise.all([
+      prisma.grade.findMany({
+        where: { seasonId },
+        select: { id: true, category: true },
+      }),
+      prisma.team.findMany({
+        where: { seasonId },
+        select: { id: true, name: true, gradeId: true },
+      }),
+      prisma.match.findMany({
+        where: { seasonId },
+        include: {
+          court: { select: { name: true } },
+          timeslot: { select: { startsAt: true } },
+        },
+      }),
+      prisma.duty.findMany({
+        where: { seasonId },
+        include: { assignments: { select: { teamId: true }, take: 1 } },
+      }),
+      prisma.timeslot.findMany({
+        where: { seasonId },
+        orderBy: { sortOrder: 'asc' },
+        select: { startsAt: true },
+      }),
+      prisma.fixtureGenerationRun.findFirst({
+        where: { seasonId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, createdAt: true },
+      }),
+    ]);
+
+    return buildGenerationDiagnostics({
+      mixedNight: season.mixedNight,
+      ladiesMensNight: season.ladiesMensNight,
+      grades: grades.map((grade) => ({
+        id: grade.id,
+        category: grade.category,
+      })),
+      teams,
+      fixtures: matches.map((match) => ({
+        id: match.id,
+        gradeId: match.gradeId,
+        homeTeamId: match.homeTeamId,
+        awayTeamId: match.awayTeamId,
+        matchDate: toDayString(match.matchDate),
+        court: match.court.name,
+        timeslot: match.timeslot.startsAt,
+      })),
+      duties: duties.map((duty) => ({ teamId: duty.assignments[0]?.teamId ?? '' })),
+      timeslots: timeslots.map((timeslot) => timeslot.startsAt),
+      lastRunAt: lastRun ? toIso(lastRun.createdAt) : null,
+      lastRunId: lastRun?.id ?? null,
+    });
+  }
+}
+
 class PrismaFixtureService implements FixtureService {
   async generateFixtures(seasonId: string): Promise<MatchRecord[]> {
     const season = await prisma.season.findUnique({
@@ -717,6 +996,18 @@ class PrismaFixtureService implements FixtureService {
         });
       }
     }
+
+    await prisma.fixtureGenerationRun.create({
+      data: {
+        seasonId,
+        runType: 'fixtures',
+        inputSnapshot: {
+          gradeCount: season.grades.length,
+          courtCount: courts.length,
+          timeslotCount: timeslots.length,
+        },
+      },
+    });
 
     return this.listFixtures(seasonId);
   }
@@ -818,6 +1109,18 @@ class PrismaDutyService implements DutyService {
         throw new Error('Failed to create duty');
       }
     }
+
+    await prisma.fixtureGenerationRun.create({
+      data: {
+        seasonId,
+        runType: 'duties',
+        inputSnapshot: {
+          gradeCount: grades.length,
+          teamCount: teams.length,
+          fixtureCount: matches.length,
+        },
+      },
+    });
 
     return this.listDuties(seasonId);
   }
@@ -1203,6 +1506,7 @@ export function createPrismaServices(): ServiceRegistry {
     authService: new PrismaAuthService(),
     seasonService: new PrismaSeasonService(),
     teamService: new PrismaTeamService(),
+    infrastructureService: new PrismaInfrastructureService(),
     fixtureService: prismaFixtureService,
     dutyService: new PrismaDutyService(),
     resultsService: new PrismaResultsService(),

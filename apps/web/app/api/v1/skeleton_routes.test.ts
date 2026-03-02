@@ -12,6 +12,13 @@ import { PATCH as seasonsSettings } from './seasons/[seasonId]/settings/route';
 import { POST as seasonsPublish } from './seasons/[seasonId]/publish/route';
 import { POST as seasonsGenerateFixtures } from './seasons/[seasonId]/generate-fixtures/route';
 import { GET as seasonsFixtures } from './seasons/[seasonId]/fixtures/route';
+import { GET as seasonsGradesGet, POST as seasonsGradesCreate } from './seasons/[seasonId]/grades/route';
+import { PATCH as gradesPatch } from './grades/[gradeId]/route';
+import { GET as seasonsCourtsGet, POST as seasonsCourtsCreate } from './seasons/[seasonId]/courts/route';
+import { PATCH as courtsPatch } from './courts/[courtId]/route';
+import { GET as seasonsTimeslotsGet, POST as seasonsTimeslotsCreate } from './seasons/[seasonId]/timeslots/route';
+import { PATCH as timeslotsPatch } from './timeslots/[timeslotId]/route';
+import { GET as generationReportGet } from './seasons/[seasonId]/generation-report/route';
 import { POST as seasonsGenerateDuties } from './seasons/[seasonId]/generate-duties/route';
 import { GET as seasonsLadders } from './seasons/[seasonId]/ladders/route';
 import { POST as seasonsFinalsGenerate } from './seasons/[seasonId]/finals/generate/route';
@@ -142,6 +149,90 @@ describe('api v1 route contracts', () => {
       asContext({ seasonId: 'season-missing' }),
     );
     expect(fixturesBadRequest.status).toBe(400);
+
+    const gradesGetForbidden = await seasonsGradesGet(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/grades'),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(gradesGetForbidden.status).toBe(403);
+
+    const gradesCreateForbidden = await seasonsGradesCreate(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/grades', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Mixed A', category: 'MIXED', rankOrder: 1 }),
+      }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(gradesCreateForbidden.status).toBe(403);
+
+    const gradePatchForbidden = await gradesPatch(
+      new Request('http://127.0.0.1:3000/api/v1/grades/grade-missing', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Updated Grade' }),
+      }),
+      asContext({ gradeId: 'grade-missing' }),
+    );
+    expect(gradePatchForbidden.status).toBe(403);
+
+    const courtsGetForbidden = await seasonsCourtsGet(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/courts'),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(courtsGetForbidden.status).toBe(403);
+
+    const courtsCreateForbidden = await seasonsCourtsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/courts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Court 4', sortOrder: 4 }),
+      }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(courtsCreateForbidden.status).toBe(403);
+
+    const courtPatchForbidden = await courtsPatch(
+      new Request('http://127.0.0.1:3000/api/v1/courts/court-missing', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Court X' }),
+      }),
+      asContext({ courtId: 'court-missing' }),
+    );
+    expect(courtPatchForbidden.status).toBe(403);
+
+    const timeslotsGetForbidden = await seasonsTimeslotsGet(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/timeslots'),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(timeslotsGetForbidden.status).toBe(403);
+
+    const timeslotsCreateForbidden = await seasonsTimeslotsCreate(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/timeslots', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ label: 'Late Slot', startsAt: '20:45', sortOrder: 4 }),
+      }),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(timeslotsCreateForbidden.status).toBe(403);
+
+    const timeslotPatchForbidden = await timeslotsPatch(
+      new Request('http://127.0.0.1:3000/api/v1/timeslots/timeslot-missing', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ startsAt: '21:00' }),
+      }),
+      asContext({ timeslotId: 'timeslot-missing' }),
+    );
+    expect(timeslotPatchForbidden.status).toBe(403);
+
+    const generationReportForbidden = await generationReportGet(
+      new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/generation-report'),
+      asContext({ seasonId: 'season-missing' }),
+    );
+    expect(generationReportForbidden.status).toBe(403);
 
     const dutyGenerateForbidden = await seasonsGenerateDuties(
       new Request('http://127.0.0.1:3000/api/v1/seasons/season-missing/generate-duties', { method: 'POST' }),

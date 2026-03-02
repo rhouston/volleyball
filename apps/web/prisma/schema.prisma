@@ -468,6 +468,8 @@ model Notification {
   templateKey       String
   payload           Json
   status            NotificationStatus @default(QUEUED)
+  attemptCount      Int @default(0)
+  lastError         String?
   scheduledFor      DateTime?
   sentAt            DateTime?
   readAt            DateTime?

@@ -1,15 +1,18 @@
 import { buildFinalsBracket } from '@/lib/finals/bracket';
+import { buildGenerationDiagnostics } from '@/lib/diagnostics/generation_report';
 import { generateDutyDraft } from '@/lib/scheduling/duty_engine';
 import { generateFixtureDraft } from '@/lib/scheduling/fixture_engine';
 import { buildStandings, type MatchOutcome, type TeamResult } from '@/lib/standings/calculate_standings';
 import type {
   AuditService,
   AuthService,
+  CourtRecord,
   DutyRecord,
   DutyService,
   FinalsService,
   FixtureService,
   GradeRecord,
+  InfrastructureService,
   ImportService,
   LadderRow,
   LadderService,
@@ -23,20 +26,27 @@ import type {
   SeasonService,
   TeamRecord,
   TeamService,
+  TimeslotRecord,
   ThreadRecord,
   VoteRecord,
   VotingService,
 } from '@/lib/services/interfaces';
 import type {
   ConfirmMembershipRequest,
+  CreateCourtRequest,
+  CreateGradeRequest,
   CreateInviteRequest,
   CreateMessageRequest,
+  CreateTimeslotRequest,
   CreateSeasonRequest,
   CreateTeamRequest,
   CreateThreadRequest,
   SubmitResultRequest,
   SubmitVoteRequest,
+  UpdateCourtRequest,
+  UpdateGradeRequest,
   UpdateSeasonSettingsRequest,
+  UpdateTimeslotRequest,
 } from '@/lib/api/contracts';
 
 function nowIso(): string {
@@ -50,6 +60,8 @@ function genId(prefix: string): string {
 type Store = {
   seasons: Map<string, SeasonRecord>;
   grades: Map<string, GradeRecord>;
+  courts: Map<string, CourtRecord>;
+  timeslots: Map<string, TimeslotRecord>;
   teams: Map<string, TeamRecord>;
   memberships: Map<string, MembershipRecord>;
   matches: Map<string, MatchRecord>;
@@ -58,6 +70,7 @@ type Store = {
   threads: Map<string, ThreadRecord>;
   messages: Map<string, MessageRecord>;
   notifications: Array<{ id: string; userId: string; message: string; createdAt: string }>;
+  generationRuns: Array<{ id: string; seasonId: string; runType: 'fixtures' | 'duties'; createdAt: string }>;
   auditLogs: Array<{
     id: string;
     userId: string;
@@ -76,6 +89,8 @@ function getStore(): Store {
     globalStore.volleyballStore = {
       seasons: new Map(),
       grades: new Map(),
+      courts: new Map(),
+      timeslots: new Map(),
       teams: new Map(),
       memberships: new Map(),
       matches: new Map(),
@@ -84,6 +99,7 @@ function getStore(): Store {
       threads: new Map(),
       messages: new Map(),
       notifications: [],
+      generationRuns: [],
       auditLogs: [],
     };
   }
@@ -107,6 +123,29 @@ function createDefaultGrades(seasonId: string): GradeRecord[] {
     category: entry.category,
     rankOrder: entry.rank,
     isActive: true,
+  }));
+}
+
+function createDefaultCourts(seasonId: string): CourtRecord[] {
+  return ['Court 1', 'Court 2', 'Court 3'].map((name, index) => ({
+    id: genId('court'),
+    seasonId,
+    name,
+    sortOrder: index + 1,
+  }));
+}
+
+function createDefaultTimeslots(seasonId: string): TimeslotRecord[] {
+  return [
+    { label: 'Timeslot 1', startsAt: '18:30', sortOrder: 1 },
+    { label: 'Timeslot 2', startsAt: '19:15', sortOrder: 2 },
+    { label: 'Timeslot 3', startsAt: '20:00', sortOrder: 3 },
+  ].map((item) => ({
+    id: genId('timeslot'),
+    seasonId,
+    label: item.label,
+    startsAt: item.startsAt,
+    sortOrder: item.sortOrder,
   }));
 }
 
@@ -241,6 +280,14 @@ class InMemorySeasonService implements SeasonService {
       this.store.grades.set(grade.id, grade);
     }
 
+    for (const court of createDefaultCourts(season.id)) {
+      this.store.courts.set(court.id, court);
+    }
+
+    for (const timeslot of createDefaultTimeslots(season.id)) {
+      this.store.timeslots.set(timeslot.id, timeslot);
+    }
+
     return season;
   }
 
@@ -362,6 +409,191 @@ class InMemoryTeamService implements TeamService {
   }
 }
 
+class InMemoryInfrastructureService implements InfrastructureService {
+  private store = getStore();
+
+  async listGrades(seasonId: string): Promise<GradeRecord[]> {
+    return [...this.store.grades.values()]
+      .filter((grade) => grade.seasonId === seasonId)
+      .sort((a, b) => a.rankOrder - b.rankOrder);
+  }
+
+  async createGrade(seasonId: string, input: CreateGradeRequest): Promise<GradeRecord> {
+    const duplicate = [...this.store.grades.values()].find(
+      (grade) => grade.seasonId === seasonId && grade.name.toLowerCase() === input.name.toLowerCase(),
+    );
+
+    if (duplicate) {
+      throw new Error('A grade with this name already exists for the season');
+    }
+
+    const created: GradeRecord = {
+      id: genId('grade'),
+      seasonId,
+      name: input.name,
+      category: input.category,
+      rankOrder: input.rankOrder,
+      isActive: input.isActive ?? true,
+    };
+
+    this.store.grades.set(created.id, created);
+    return created;
+  }
+
+  async updateGrade(gradeId: string, input: UpdateGradeRequest): Promise<GradeRecord | null> {
+    const existing = this.store.grades.get(gradeId);
+
+    if (!existing) {
+      return null;
+    }
+
+    const updated: GradeRecord = {
+      ...existing,
+      name: input.name ?? existing.name,
+      category: input.category ?? existing.category,
+      rankOrder: input.rankOrder ?? existing.rankOrder,
+      isActive: input.isActive ?? existing.isActive,
+    };
+
+    this.store.grades.set(gradeId, updated);
+    return updated;
+  }
+
+  async listCourts(seasonId: string): Promise<CourtRecord[]> {
+    return [...this.store.courts.values()]
+      .filter((court) => court.seasonId === seasonId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  }
+
+  async createCourt(seasonId: string, input: CreateCourtRequest): Promise<CourtRecord> {
+    const duplicate = [...this.store.courts.values()].find(
+      (court) => court.seasonId === seasonId && court.name.toLowerCase() === input.name.toLowerCase(),
+    );
+
+    if (duplicate) {
+      throw new Error('A court with this name already exists for the season');
+    }
+
+    const created: CourtRecord = {
+      id: genId('court'),
+      seasonId,
+      name: input.name,
+      sortOrder: input.sortOrder,
+    };
+
+    this.store.courts.set(created.id, created);
+    return created;
+  }
+
+  async updateCourt(courtId: string, input: UpdateCourtRequest): Promise<CourtRecord | null> {
+    const existing = this.store.courts.get(courtId);
+
+    if (!existing) {
+      return null;
+    }
+
+    const updated: CourtRecord = {
+      ...existing,
+      name: input.name ?? existing.name,
+      sortOrder: input.sortOrder ?? existing.sortOrder,
+    };
+
+    this.store.courts.set(courtId, updated);
+    return updated;
+  }
+
+  async listTimeslots(seasonId: string): Promise<TimeslotRecord[]> {
+    return [...this.store.timeslots.values()]
+      .filter((timeslot) => timeslot.seasonId === seasonId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.startsAt.localeCompare(b.startsAt));
+  }
+
+  async createTimeslot(seasonId: string, input: CreateTimeslotRequest): Promise<TimeslotRecord> {
+    const duplicate = [...this.store.timeslots.values()].find(
+      (timeslot) => timeslot.seasonId === seasonId && timeslot.sortOrder === input.sortOrder,
+    );
+
+    if (duplicate) {
+      throw new Error('A timeslot with this sort order already exists for the season');
+    }
+
+    const created: TimeslotRecord = {
+      id: genId('timeslot'),
+      seasonId,
+      label: input.label,
+      startsAt: input.startsAt,
+      sortOrder: input.sortOrder,
+    };
+
+    this.store.timeslots.set(created.id, created);
+    return created;
+  }
+
+  async updateTimeslot(timeslotId: string, input: UpdateTimeslotRequest): Promise<TimeslotRecord | null> {
+    const existing = this.store.timeslots.get(timeslotId);
+
+    if (!existing) {
+      return null;
+    }
+
+    const updated: TimeslotRecord = {
+      ...existing,
+      label: input.label ?? existing.label,
+      startsAt: input.startsAt ?? existing.startsAt,
+      sortOrder: input.sortOrder ?? existing.sortOrder,
+    };
+
+    this.store.timeslots.set(timeslotId, updated);
+    return updated;
+  }
+
+  async getGenerationDiagnostics(seasonId: string) {
+    const season = this.store.seasons.get(seasonId);
+
+    if (!season) {
+      throw new Error('Season not found');
+    }
+
+    const grades = [...this.store.grades.values()].filter((grade) => grade.seasonId === seasonId);
+    const teams = [...this.store.teams.values()].filter((team) => team.seasonId === seasonId);
+    const fixtures = [...this.store.matches.values()].filter((match) => match.seasonId === seasonId);
+    const duties = [...this.store.duties.values()].filter((duty) => duty.seasonId === seasonId);
+    const timeslots = [...this.store.timeslots.values()]
+      .filter((timeslot) => timeslot.seasonId === seasonId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const lastRun = [...this.store.generationRuns]
+      .filter((run) => run.seasonId === seasonId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+
+    return buildGenerationDiagnostics({
+      mixedNight: season.mixedNight,
+      ladiesMensNight: season.ladiesMensNight,
+      grades: grades.map((grade) => ({
+        id: grade.id,
+        category: grade.category,
+      })),
+      teams: teams.map((team) => ({
+        id: team.id,
+        name: team.name,
+        gradeId: team.gradeId,
+      })),
+      fixtures: fixtures.map((match) => ({
+        id: match.id,
+        gradeId: match.gradeId,
+        homeTeamId: match.homeTeamId,
+        awayTeamId: match.awayTeamId,
+        matchDate: match.matchDate,
+        court: match.court,
+        timeslot: match.timeslot,
+      })),
+      duties: duties.map((duty) => ({ teamId: duty.teamId })),
+      timeslots: timeslots.map((timeslot) => timeslot.startsAt),
+      lastRunAt: lastRun?.createdAt ?? null,
+      lastRunId: lastRun?.id ?? null,
+    });
+  }
+}
+
 class InMemoryFixtureService implements FixtureService {
   private store = getStore();
 
@@ -380,8 +612,14 @@ class InMemoryFixtureService implements FixtureService {
 
     const grades = [...this.store.grades.values()].filter((grade) => grade.seasonId === seasonId);
     const createdMatches: MatchRecord[] = [];
-    const courts = ['Court 1', 'Court 2', 'Court 3'];
-    const timeslots = ['18:30', '19:15', '20:00'];
+    const courts = [...this.store.courts.values()]
+      .filter((court) => court.seasonId === seasonId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((court) => court.name);
+    const timeslots = [...this.store.timeslots.values()]
+      .filter((timeslot) => timeslot.seasonId === seasonId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((timeslot) => timeslot.startsAt);
 
     for (const grade of grades) {
       const teams = [...this.store.teams.values()].filter((team) => team.gradeId === grade.id);
@@ -420,6 +658,13 @@ class InMemoryFixtureService implements FixtureService {
         createdMatches.push(match);
       }
     }
+
+    this.store.generationRuns.push({
+      id: genId('run'),
+      seasonId,
+      runType: 'fixtures',
+      createdAt: nowIso(),
+    });
 
     return createdMatches;
   }
@@ -472,6 +717,13 @@ class InMemoryDutyService implements DutyService {
 
       this.store.duties.set(duty.id, duty);
       return duty;
+    });
+
+    this.store.generationRuns.push({
+      id: genId('run'),
+      seasonId,
+      runType: 'duties',
+      createdAt: nowIso(),
     });
 
     return created;
@@ -704,6 +956,7 @@ export function createInMemoryServices() {
     authService: new InMemoryAuthService(),
     seasonService: new InMemorySeasonService(),
     teamService: new InMemoryTeamService(),
+    infrastructureService: new InMemoryInfrastructureService(),
     fixtureService: new InMemoryFixtureService(),
     dutyService: new InMemoryDutyService(),
     resultsService: new InMemoryResultsService(),

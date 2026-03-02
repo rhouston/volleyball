@@ -5,6 +5,13 @@ import { GET as usersMe } from './users/me/route';
 import { POST as seasonsCreate } from './seasons/route';
 import { PATCH as seasonsSettings } from './seasons/[seasonId]/settings/route';
 import { POST as seasonsPublish } from './seasons/[seasonId]/publish/route';
+import { GET as seasonsGradesGet, POST as seasonsGradesCreate } from './seasons/[seasonId]/grades/route';
+import { PATCH as gradesPatch } from './grades/[gradeId]/route';
+import { GET as seasonsCourtsGet, POST as seasonsCourtsCreate } from './seasons/[seasonId]/courts/route';
+import { PATCH as courtsPatch } from './courts/[courtId]/route';
+import { GET as seasonsTimeslotsGet, POST as seasonsTimeslotsCreate } from './seasons/[seasonId]/timeslots/route';
+import { PATCH as timeslotsPatch } from './timeslots/[timeslotId]/route';
+import { GET as generationReportGet } from './seasons/[seasonId]/generation-report/route';
 import { POST as teamsCreate } from './teams/route';
 import { GET as teamGet } from './teams/[teamId]/route';
 import { POST as teamsInvite } from './teams/[teamId]/invites/route';
@@ -73,6 +80,93 @@ describe('api v1 integration flow', () => {
     const grades = await services.seasonService.getGrades(seasonId);
     const mixedAGrade = grades.find((grade) => grade.name === 'Mixed A');
     expect(mixedAGrade).toBeTruthy();
+
+    const gradesListResponse = await seasonsGradesGet(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/grades`, {
+        headers: jsonHeaders('grade_admin'),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(gradesListResponse.status).toBe(200);
+
+    const createGradeResponse = await seasonsGradesCreate(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/grades`, {
+        method: 'POST',
+        headers: jsonHeaders('grade_admin'),
+        body: JSON.stringify({ name: 'Mixed D', category: 'MIXED', rankOrder: 6 }),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(createGradeResponse.status).toBe(201);
+    const newGradeId = ((await createGradeResponse.json()) as { grade: { id: string } }).grade.id;
+
+    const patchGradeResponse = await gradesPatch(
+      new Request(`http://127.0.0.1:3000/api/v1/grades/${newGradeId}`, {
+        method: 'PATCH',
+        headers: jsonHeaders('grade_admin'),
+        body: JSON.stringify({ isActive: false }),
+      }),
+      asContext({ gradeId: newGradeId }),
+    );
+    expect(patchGradeResponse.status).toBe(200);
+
+    const createCourtResponse = await seasonsCourtsCreate(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/courts`, {
+        method: 'POST',
+        headers: jsonHeaders('grade_admin'),
+        body: JSON.stringify({ name: 'Court 4', sortOrder: 4 }),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(createCourtResponse.status).toBe(201);
+    const courtId = ((await createCourtResponse.json()) as { court: { id: string } }).court.id;
+
+    const listCourtsResponse = await seasonsCourtsGet(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/courts`, {
+        headers: jsonHeaders('grade_admin'),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(listCourtsResponse.status).toBe(200);
+
+    const patchCourtResponse = await courtsPatch(
+      new Request(`http://127.0.0.1:3000/api/v1/courts/${courtId}`, {
+        method: 'PATCH',
+        headers: jsonHeaders('grade_admin'),
+        body: JSON.stringify({ name: 'Court 4A' }),
+      }),
+      asContext({ courtId }),
+    );
+    expect(patchCourtResponse.status).toBe(200);
+
+    const createTimeslotResponse = await seasonsTimeslotsCreate(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/timeslots`, {
+        method: 'POST',
+        headers: jsonHeaders('grade_admin'),
+        body: JSON.stringify({ label: 'Late Slot', startsAt: '20:45', sortOrder: 4 }),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(createTimeslotResponse.status).toBe(201);
+    const timeslotId = ((await createTimeslotResponse.json()) as { timeslot: { id: string } }).timeslot.id;
+
+    const listTimeslotsResponse = await seasonsTimeslotsGet(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/timeslots`, {
+        headers: jsonHeaders('grade_admin'),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(listTimeslotsResponse.status).toBe(200);
+
+    const patchTimeslotResponse = await timeslotsPatch(
+      new Request(`http://127.0.0.1:3000/api/v1/timeslots/${timeslotId}`, {
+        method: 'PATCH',
+        headers: jsonHeaders('grade_admin'),
+        body: JSON.stringify({ label: 'Late Slot Updated' }),
+      }),
+      asContext({ timeslotId }),
+    );
+    expect(patchTimeslotResponse.status).toBe(200);
 
     const createTeam = async (name: string) => {
       const response = await teamsCreate(
@@ -176,6 +270,24 @@ describe('api v1 integration flow', () => {
     );
     expect(dutiesResponse.status).toBe(200);
     expect((await dutiesResponse.json()).duties.length).toBeGreaterThan(0);
+
+    const diagnosticsResponse = await generationReportGet(
+      new Request(`http://127.0.0.1:3000/api/v1/seasons/${seasonId}/generation-report`, {
+        headers: jsonHeaders('grade_admin'),
+      }),
+      asContext({ seasonId }),
+    );
+    expect(diagnosticsResponse.status).toBe(200);
+    const diagnosticsBody = (await diagnosticsResponse.json()) as {
+      diagnostics: {
+        hardConflicts: { count: number };
+        fairness: { timeslotDistributionByTeam: unknown[]; dutyDistributionByTeam: unknown[] };
+        generation: { runId: string | null };
+      };
+    };
+    expect(typeof diagnosticsBody.diagnostics.hardConflicts.count).toBe('number');
+    expect(Array.isArray(diagnosticsBody.diagnostics.fairness.timeslotDistributionByTeam)).toBe(true);
+    expect(Array.isArray(diagnosticsBody.diagnostics.fairness.dutyDistributionByTeam)).toBe(true);
 
     const firstFixtureId = fixtures[0].id;
 

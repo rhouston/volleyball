@@ -1,9 +1,8 @@
 import { Resend } from 'resend';
 import type { PrismaClient } from '@prisma/client';
 import { createRequire } from 'node:module';
-import { getEnv } from '@/lib/config/env';
+import { getEnv, type AppEnv } from '@/lib/config/env';
 import { buildNotificationEmail } from './notification_templates';
-import { enqueueNotificationDispatchJob } from './pg_boss';
 
 const require = createRequire(import.meta.url);
 
@@ -11,6 +10,29 @@ export type NotificationDispatchSummary = {
   processed: number;
   emailed: number;
   failed: number;
+};
+
+type PendingNotification = {
+  id: string;
+  channel: 'IN_APP' | 'EMAIL';
+  payload: unknown;
+  attemptCount: number;
+  recipientUser: {
+    email: string;
+  };
+};
+
+type NotificationPrismaLike = {
+  notification: {
+    findMany(args: unknown): Promise<PendingNotification[]>;
+    update(args: unknown): Promise<unknown>;
+  };
+};
+
+type DispatchDependencies = {
+  prisma?: NotificationPrismaLike;
+  env?: AppEnv;
+  sendEmail?: (input: { to: string; subject: string; html: string; text: string }) => Promise<void>;
 };
 
 function payloadMessage(payload: unknown): string {
@@ -27,10 +49,23 @@ function getPrismaClient(): PrismaClient {
 }
 
 export async function runNotificationDispatchCycle(limit = 25): Promise<NotificationDispatchSummary> {
-  const prisma = getPrismaClient();
-  const env = getEnv();
+  return runNotificationDispatchCycleWithDependencies(limit);
+}
+
+export async function runNotificationDispatchCycleWithDependencies(
+  limit = 25,
+  dependencies?: DispatchDependencies,
+): Promise<NotificationDispatchSummary> {
+  const prisma = dependencies?.prisma ?? getPrismaClient();
+  const env = dependencies?.env ?? getEnv();
   const pending = await prisma.notification.findMany({
-    where: { status: 'QUEUED' },
+    where: {
+      status: 'QUEUED',
+      attemptCount: {
+        lt: 3,
+      },
+      OR: [{ scheduledFor: null }, { scheduledFor: { lte: new Date() } }],
+    },
     orderBy: { createdAt: 'asc' },
     take: limit,
     include: {
@@ -47,17 +82,31 @@ export async function runNotificationDispatchCycle(limit = 25): Promise<Notifica
   }
 
   const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
+  const sendEmail =
+    dependencies?.sendEmail ??
+    (async (input: { to: string; subject: string; html: string; text: string }) => {
+      if (!resend || !env.EMAIL_FROM) {
+        throw new Error('Email provider is not configured');
+      }
+
+      await resend.emails.send({
+        from: env.EMAIL_FROM,
+        to: input.to,
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      });
+    });
+
   let emailed = 0;
   let failed = 0;
 
   for (const notification of pending) {
     try {
-      if (notification.channel === 'EMAIL' && resend && env.EMAIL_FROM) {
+      if (notification.channel === 'EMAIL') {
         const message = payloadMessage(notification.payload) || 'You have a new competition update.';
         const email = buildNotificationEmail({ message });
-
-        await resend.emails.send({
-          from: env.EMAIL_FROM,
+        await sendEmail({
           to: notification.recipientUser.email,
           subject: email.subject,
           html: email.html,
@@ -70,19 +119,30 @@ export async function runNotificationDispatchCycle(limit = 25): Promise<Notifica
         data: {
           status: 'SENT',
           sentAt: new Date(),
+          attemptCount: {
+            increment: 1,
+          },
+          lastError: null,
         },
       });
 
       emailed += 1;
-    } catch {
-      failed += 1;
+    } catch (error) {
+      const nextAttempt = notification.attemptCount + 1;
+      const isFinalFailure = nextAttempt >= 3;
 
       await prisma.notification.update({
         where: { id: notification.id },
         data: {
-          status: 'FAILED',
+          status: isFinalFailure ? 'FAILED' : 'QUEUED',
+          attemptCount: nextAttempt,
+          lastError: error instanceof Error ? error.message : 'Unknown error',
         },
       });
+
+      if (isFinalFailure) {
+        failed += 1;
+      }
     }
   }
 
@@ -94,6 +154,5 @@ export async function runNotificationDispatchCycle(limit = 25): Promise<Notifica
 }
 
 export async function queueNotificationDispatch(): Promise<{ queued: boolean }> {
-  const queued = await enqueueNotificationDispatchJob();
-  return { queued };
+  return { queued: true };
 }

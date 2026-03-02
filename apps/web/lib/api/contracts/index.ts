@@ -27,6 +27,42 @@ export type CreateTeamRequest = {
   shortCode?: string;
 };
 
+export type CreateGradeRequest = {
+  name: string;
+  category: 'MIXED' | 'LADIES' | 'MENS';
+  rankOrder: number;
+  isActive?: boolean;
+};
+
+export type UpdateGradeRequest = {
+  name?: string;
+  category?: 'MIXED' | 'LADIES' | 'MENS';
+  rankOrder?: number;
+  isActive?: boolean;
+};
+
+export type CreateCourtRequest = {
+  name: string;
+  sortOrder: number;
+};
+
+export type UpdateCourtRequest = {
+  name?: string;
+  sortOrder?: number;
+};
+
+export type CreateTimeslotRequest = {
+  label: string;
+  startsAt: string;
+  sortOrder: number;
+};
+
+export type UpdateTimeslotRequest = {
+  label?: string;
+  startsAt?: string;
+  sortOrder?: number;
+};
+
 export type CreateInviteRequest = {
   inviteeEmail: string;
 };
@@ -61,3 +97,6 @@ export type CreateNotificationRequest = {
   recipientUserId: string;
   message: string;
 };
+
+export type GenerationDiagnosticsResponse = GeneratedGenerationDiagnosticsResponse;
+import type { GenerationDiagnosticsResponse as GeneratedGenerationDiagnosticsResponse } from '@/lib/diagnostics/generation_report';

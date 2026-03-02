@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefix apps/web
 
+      - name: Security audit (moderate+ blocker)
+        run: npm run --prefix apps/web security:audit:retry
+
       - name: Install Playwright browser
         run: npx --prefix apps/web playwright install chromium
 

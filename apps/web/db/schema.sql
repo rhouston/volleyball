@@ -55,6 +55,8 @@ create table season_settings (
   points_bye int not null default 3,
   penalty_missed_duty int not null default -2,
   tie_break_order text not null default 'points,percentage,for,head_to_head,admin_decision',
+  finals_format text not null default 'simple_top4',
+  excluded_dates_json jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -255,6 +257,8 @@ create table notifications (
   template_key text not null,
   payload jsonb not null,
   status text not null default 'QUEUED',
+  attempt_count int not null default 0,
+  last_error text,
   scheduled_for timestamptz,
   sent_at timestamptz,
   read_at timestamptz,
