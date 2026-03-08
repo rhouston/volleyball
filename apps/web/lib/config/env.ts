@@ -4,6 +4,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   APP_BASE_URL: z.string().url().default('http://127.0.0.1:3000'),
   DATABASE_URL: z.string().optional(),
+  DATABASE_URL_UNPOOLED: z.string().optional(),
+  DIRECT_URL: z.string().optional(),
   AUTH_SECRET: z.string().optional(),
   AUTH_TRUST_HOST: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
