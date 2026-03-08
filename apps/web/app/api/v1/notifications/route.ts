@@ -36,13 +36,18 @@ export async function POST(request: Request) {
       entityType: 'notification',
       entityId: payload.recipientUserId,
       payload: {
+        dispatchMode: queueResult.mode,
         queuedDispatch: queueResult.queued,
+        dispatchSummary: queueResult.summary,
+        dispatchError: queueResult.dispatchError ?? null,
       },
     });
 
     return ok({
       queued: true,
-      dispatchJobQueued: queueResult.queued,
+      dispatchMode: queueResult.mode,
+      dispatchSummary: queueResult.summary,
+      dispatchError: queueResult.dispatchError ?? null,
     });
   } catch {
     return badRequest('Invalid notification payload');

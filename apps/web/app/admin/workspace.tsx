@@ -97,6 +97,17 @@ function SectionCard(props: { title: string; subtitle?: string; children: ReactN
   );
 }
 
+function ChecklistItem(props: { label: string; complete: boolean }) {
+  return (
+    <li className={styles.checklistItem}>
+      <span aria-hidden="true" className={props.complete ? styles.checkComplete : styles.checkPending}>
+        {props.complete ? 'Done' : 'Todo'}
+      </span>
+      <span>{props.label}</span>
+    </li>
+  );
+}
+
 export function AdminWorkspace() {
   const [actorRole, setActorRole] = useState<RoleOption>('platform_admin');
   const [actorUserId, setActorUserId] = useState('admin-local');
@@ -145,6 +156,14 @@ export function AdminWorkspace() {
   const [logs, setLogs] = useState<OperationLog[]>([]);
 
   const selectedGradeName = useMemo(() => grades.find((grade) => grade.id === teamGradeId)?.name ?? '', [grades, teamGradeId]);
+  const onboardingChecks = [
+    { label: 'Season created', complete: Boolean(seasonId) },
+    { label: 'Infrastructure ready', complete: grades.length > 0 && courts.length > 0 && timeslots.length > 0 },
+    { label: 'Teams added', complete: teams.length >= 2 },
+    { label: 'Fixtures generated', complete: fixtureCount > 0 },
+    { label: 'Duties generated', complete: dutyCount > 0 },
+    { label: 'Season published', complete: seasonStatus === 'PUBLISHED' },
+  ];
 
   function addLog(tone: OperationLog['tone'], message: string) {
     setLogs((previous) => [{ id: crypto.randomUUID(), tone, message }, ...previous].slice(0, 20));
@@ -617,7 +636,7 @@ export function AdminWorkspace() {
         return;
       }
 
-      addLog('ok', 'Notification queued for cron dispatch.');
+      addLog('ok', 'Notification queued and inline dispatch attempted.');
     } finally {
       setBusy(false);
     }
@@ -648,6 +667,14 @@ export function AdminWorkspace() {
             <input id="actor-user-id" value={actorUserId} onChange={(event) => setActorUserId(event.target.value)} />
           </label>
         </div>
+      </SectionCard>
+
+      <SectionCard title="Launch Slice" subtitle="This is the first Vercel Hobby release path to verify before widening scope.">
+        <ul className={styles.checklist}>
+          {onboardingChecks.map((item) => (
+            <ChecklistItem key={item.label} label={item.label} complete={item.complete} />
+          ))}
+        </ul>
       </SectionCard>
 
       <SectionCard title="Season Setup" subtitle="Create season shell and lock scoring/finals defaults.">

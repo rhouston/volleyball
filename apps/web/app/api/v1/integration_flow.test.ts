@@ -391,6 +391,17 @@ describe('api v1 integration flow', () => {
       }),
     );
     expect(notificationsCreateResponse.status).toBe(200);
+    const notificationsCreateBody = (await notificationsCreateResponse.json()) as {
+      queued: boolean;
+      dispatchMode: string;
+      dispatchSummary: {
+        processed: number;
+        emailed: number;
+        failed: number;
+      };
+    };
+    expect(notificationsCreateBody.queued).toBe(true);
+    expect(notificationsCreateBody.dispatchMode).toBe('inline');
 
     const dryRunResponse = await importDryRun(
       new Request('http://127.0.0.1:3000/api/v1/import/dry-run', {

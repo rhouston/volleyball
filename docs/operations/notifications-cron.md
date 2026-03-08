@@ -1,12 +1,13 @@
 # Notifications Cron Runbook
 
 ## Purpose
-Dispatch queued notifications (`status=QUEUED`) from the `notifications` table on a fixed cron schedule in Vercel Hobby.
+Dispatch queued notifications (`status=QUEUED`) from the `notifications` table with an inline best-effort send on write actions and a fixed daily cron sweep on Vercel Hobby.
 
 ## Schedule
 - Cron config file: `apps/web/vercel.json`
 - Endpoint: `/api/cron/notifications`
-- Cadence: every 10 minutes (`*/10 * * * *`)
+- Cadence: daily at `20:00 UTC` (`0 20 * * *`)
+- Reason: Vercel Hobby does not support the original 10-minute cron design, so the app now sends immediately when possible and uses cron as a daily backstop.
 
 ## Required Environment Variables
 - `CRON_SECRET`: shared secret used by the cron route.
@@ -37,6 +38,7 @@ Expected JSON shape:
 ```
 
 ## Dispatch Semantics
+- `POST /api/v1/notifications` enqueues the notification and immediately runs an inline dispatch cycle for this small-project Hobby deployment model.
 - Route authenticates `Authorization: Bearer ${CRON_SECRET}`.
 - Query selects oldest `QUEUED` notifications, `attempt_count < 3`, and `scheduled_for <= now` (or null).
 - Success:
@@ -58,7 +60,8 @@ Expected JSON shape:
 5. Validate backlog growth and retry saturation.
 
 ## Resend Outage Fallback
-- Keep cron active; failed rows will retry until `attempt_count` reaches 3.
+- Inline sends should fail safely back to queued retry behavior.
+- Keep the daily cron active; failed rows will retry until `attempt_count` reaches 3.
 - For prolonged outages, temporarily pause enqueue callers for non-critical mail.
 - Once provider recovers, optionally requeue `FAILED` rows after review.
 

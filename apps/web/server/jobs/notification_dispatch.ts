@@ -12,6 +12,13 @@ export type NotificationDispatchSummary = {
   failed: number;
 };
 
+export type NotificationDispatchRequestResult = {
+  mode: 'inline';
+  queued: true;
+  summary: NotificationDispatchSummary;
+  dispatchError?: string;
+};
+
 type PendingNotification = {
   id: string;
   channel: 'IN_APP' | 'EMAIL';
@@ -153,6 +160,21 @@ export async function runNotificationDispatchCycleWithDependencies(
   };
 }
 
-export async function queueNotificationDispatch(): Promise<{ queued: boolean }> {
-  return { queued: true };
+export async function queueNotificationDispatch(limit = 25): Promise<NotificationDispatchRequestResult> {
+  try {
+    const summary = await runNotificationDispatchCycle(limit);
+
+    return {
+      mode: 'inline',
+      queued: true,
+      summary,
+    };
+  } catch (error) {
+    return {
+      mode: 'inline',
+      queued: true,
+      summary: { processed: 0, emailed: 0, failed: 0 },
+      dispatchError: error instanceof Error ? error.message : 'Unknown dispatch error',
+    };
+  }
 }
